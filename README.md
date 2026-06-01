@@ -8,11 +8,11 @@ an interactive **Plotly HTML data story**, and a consumer **SVG poster**.
 
 - **Tableau dashboard (Tableau Public):** https://public.tableau.com/app/profile/jillian.robertson3467/viz/globalandregionalwineproductionmap/GlobalWineDashboard
 - **HTML data story (GitHub Pages):** https://jtrobertson4.github.io/wine-market-project/
-- **SVG poster:** `svg/wine_consumer_poster.svg`
+- **SVG poster:** in this repository --> `svg/wine_consumer_poster.svg`
 
 ## Audience & questions
 
-**Audience:** a curious, educated wine drinker — and, for the poster, a casual shopper. No
+**Audience:** a curious wine drinker or a wanting-to-be-more-informed wine investor — and, for the poster, a casual shopper (i.e., the everyday consumer). No
 viticulture or statistics background assumed.
 **Questions:** Where does the world's wine come from and where is it drunk? Which grapes grow
 where? Do higher scores or prices actually signal better wine, and where does value hide?
@@ -26,10 +26,9 @@ where? Do higher scores or prices actually signal better wine, and where does va
 ## Data sets (Data Set Use)
 
 - **OIV** — country wine production & consumption (hectolitres), 1995–2025.
-- **University of Adelaide / Wine Economics** — grape variety bearing area & country yield.
+- **University of Adelaide / Wine Economics** — grape variety bearing area & country yield. Old World / New World country classification.
 - **Kaggle WineMag / Wine Enthusiast** — ~130,000 critic reviews (well beyond the 100-row /
   5-column "heft" bar: 13 columns).
-- **Old World / New World** country classification.
 
 ## Process & methods (Process Writeup)
 
@@ -53,7 +52,7 @@ via cards and proximity; on-graph titles, captions, and tooltips let each visual
 
 ## Limitations
 
-Variety-level production is **estimated**, not directly observed. Reviews reflect critic-reviewed
+Variety-level and region-level production is **estimated**, not directly observed. Reviews reflect critic-reviewed
 wines, not the full market. Price data is incomplete. Wine-style mapping simplifies ambiguous
 blends and fortified wines. The Tableau map uses three snapshot years — **2000, 2010, 2016** —
 where country production and region-level estimates align.
