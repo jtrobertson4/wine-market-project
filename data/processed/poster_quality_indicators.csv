@@ -1,0 +1,11 @@
+dimension,category,n,avg_points,lift
+Variety,Sangiovese Grosso,751,90.53,2.08
+Variety,Nebbiolo,2804,90.25,1.8
+Country,Austria,3345,90.1,1.65
+Variety,Blaufränkisch,232,90.02,1.57
+Variety,Grüner Veltliner,1345,89.98,1.53
+Country,Germany,2165,89.85,1.4
+Variety,Port,668,89.73,1.29
+Variety,Champagne Blend,1396,89.66,1.22
+Variety,Riesling,5189,89.45,1.0
+Variety,Pinot Noir,13272,89.41,0.96

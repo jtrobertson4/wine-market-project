@@ -1,0 +1,11 @@
+wine_style,metric,n,min,q1,median,q3,max
+red,points,77542,80.0,87.0,89.0,91.0,100.0
+white,points,40406,80.0,86.0,88.0,90.0,100.0
+rose,points,3998,80.0,85.0,87.0,88.0,96.0
+sparkling,points,5378,80.0,87.0,88.0,91.0,100.0
+other,points,2647,80.0,87.0,88.0,90.0,100.0
+red,value_score,72570,0.03,1.84,2.9,4.53,21.5
+white,value_score,37624,0.05,2.97,4.32,5.8,21.5
+rose,value_score,3636,0.11,4.25,5.29,6.62,16.8
+sparkling,value_score,4833,0.12,1.74,2.93,4.58,17.4
+other,value_score,2312,0.1,2.3,3.6,4.89,12.43
