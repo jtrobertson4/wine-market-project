@@ -57,8 +57,11 @@ STYLE_COLORS = {"red": RED, "white": WHITE_W, "rose": ROSE,
 GRAPE_COLOR_MAP = {"red": RED, "white": WHITE_W, "grey_or_gris": "#9C8C7A",
                    "rose": ROSE, "unknown": NEUTRAL}
 # brown sequential scales for non-grape magnitudes (with the light page at the low end)
-BROWN_SCALE = [[0, "#F3E6D0"], [0.5, "#B07C45"], [1, BROWN]]          # production
+BROWN_SCALE = [[0, "#F3E6D0"], [0.5, "#B07C45"], [1, BROWN]]          # generic magnitude
 BROWN_SCALE2 = [[0, "#F1E7D6"], [0.5, "#9C8A55"], [1, "#5C4A1E"]]     # consumption (olive-brown)
+# olive-green sequential scale -- soft sage/khaki at the low end deepening to muted olive,
+# matching the Tableau dashboard look (gentle, not saturated).
+GREEN_SCALE = [[0, "#EDEBD3"], [0.5, "#C3BE86"], [1, "#8A8B52"]]      # production (soft olive)
 
 FIG_KW = dict(full_html=False, include_plotlyjs=False,
               config={"responsive": True, "displayModeBar": False})
@@ -131,19 +134,35 @@ def per_row_tonal_heatmap(pivot, row_colors, hover_unit="", height=540, title=No
             z=z, x=xs, y=ys, colorscale=tonal_scale(col), zmin=0, zmax=vmax,
             showscale=False, xgap=2, ygap=2, hoverongaps=False,
             hovertemplate="%{y} \u00b7 %{x}<br>%{z:,.0f}" + hover_unit + "<extra></extra>"))
-    # invisible reference trace carrying a neutral intensity colourbar (shared scale)
-    fig.add_trace(go.Heatmap(
-        z=[[0, vmax]], x=[xs[0], xs[0]], y=[ys[0], ys[0]], opacity=0,
-        colorscale=[[0, "rgba(120,90,60,0.18)"], [1, "rgba(79,46,28,0.95)"]],
-        zmin=0, zmax=vmax, showscale=True, hoverinfo="skip",
-        colorbar=dict(title=dict(text=cbar_title, font=dict(size=11, color=INK)),
-                      thickness=12, len=0.72, outlinewidth=0,
-                      tickfont=dict(family=FONT, size=10, color=INK))))
+    # two reference gradients (red + white) flush side by side, sharing ONE axis with
+    # 0/25/50/75/100% ticks. Cell hue tells the grape colour; depth tells magnitude.
+    import math as _m
+    def _nice(v):
+        if v <= 0:
+            return 1.0
+        mag = 10 ** _m.floor(_m.log10(v))
+        return _m.ceil(v / mag) * mag
+    top = _nice(float(vmax))
+    ticks = [0, top * .25, top * .5, top * .75, top]
+    big = top >= 1000
+    ticktext = [(f"{t/1000:.0f}k" if big else f"{t:.0f}") for t in ticks]
+    legend_grads = [(tonal_scale(STYLE_COLORS["red"]), 1.02, False),
+                    (tonal_scale(STYLE_COLORS["white"]), 1.075, True)]
+    for scale, xpos, show in legend_grads:
+        fig.add_trace(go.Heatmap(
+            z=[[0, top]], x=[xs[0], xs[0]], y=[ys[0], ys[0]], opacity=0,
+            colorscale=scale, zmin=0, zmax=top, showscale=True, hoverinfo="skip",
+            colorbar=dict(title=dict(text=(cbar_title if show else ""),
+                                     font=dict(size=10, color=INK), side="top"),
+                          x=xpos, thickness=12, len=0.66, outlinewidth=0,
+                          tickvals=(ticks if show else []),
+                          ticktext=(ticktext if show else []),
+                          tickfont=dict(family=FONT, size=9, color=INK))))
     fig.update_yaxes(autorange="reversed", type="category",
                      categoryorder="array", categoryarray=ys)
     fig.update_xaxes(type="category")
     style_fig(fig, height=height, title=title, subtitle=subtitle)
-    fig.update_layout(margin=dict(l=left_margin, r=30,
+    fig.update_layout(margin=dict(l=left_margin, r=110,
                                   t=104 if (title and subtitle) else 60, b=bottom_margin))
     return fig
 
@@ -152,7 +171,8 @@ def style_fig(fig, height=460, title=None, subtitle=None):
     """Apply the project look + a proper title/subtitle to any figure."""
     title_obj = None
     if title:
-        title_obj = dict(text=f"<b>{title}</b>", font=dict(size=17, color=BROWN), x=0.02,
+        # all graph titles render in uppercase for a consistent editorial look
+        title_obj = dict(text=f"<b>{title.upper()}</b>", font=dict(size=17, color=BROWN), x=0.02,
                          xanchor="left", y=0.97, yanchor="top")
         if subtitle:
             title_obj["subtitle"] = dict(text=subtitle,
@@ -225,20 +245,28 @@ def build_global_market(oiv):
         return "<p class='skip'>Production data unavailable -- section skipped.</p>", {}
     prod_col, cons_col = "avg_production_hl", "avg_consumption_hl"
     d = oiv.dropna(subset=[prod_col]).copy()
+    # drop non-country aggregate rows (e.g. "Global") -- they aren't real map locations and
+    # their huge totals would blow out the colour scale.
+    AGG_ROWS = {"Global", "World", "Total", "EU", "European Union"}
+    d = d[~d["country"].isin(AGG_ROWS)].copy()
 
-    # --- choropleth, simple production/consumption toggle, BROWN scales ---
-    metrics = [("Avg production", prod_col, BROWN_SCALE),
+    # --- choropleth, production/consumption toggle. Production = olive-green scale.
+    # With aggregates removed we can colour to the TRUE max -- the real top producer
+    # (Italy ~49M hl) anchors the dark end, so every country reads on a real scale.
+    metrics = [("Avg production", prod_col, GREEN_SCALE),
                ("Avg consumption", cons_col, BROWN_SCALE2)]
     metrics = [m for m in metrics if m[1] in d.columns]
 
     geo = go.Figure()
     for i, (label, col, scale) in enumerate(metrics):
+        cap = float(d[col].max())                # true max now that aggregates are gone
         geo.add_trace(go.Choropleth(
             locations=d["country"], locationmode="country names", z=d[col],
-            colorscale=scale, marker_line_color="#EAD9BC", marker_line_width=0.3,
+            colorscale=scale, zmin=0, zmax=cap,
+            marker_line_color="#EAD9BC", marker_line_width=0.3,
             colorbar=dict(title="hl", thickness=12, len=0.7),
             name=label, visible=(i == 0),
-            hovertemplate="%{location}<br>" + label + ": %{z:,.0f} k hl<extra></extra>"))
+            hovertemplate="%{location}<br>" + label + ": %{z:,.0f} hl<extra></extra>"))
     geo.update_layout(updatemenus=[dict(
         type="dropdown", direction="down", x=1.0, xanchor="right", y=1.26,
         bgcolor=CARD, bordercolor=GRID, font=dict(family=FONT, size=12),
@@ -335,6 +363,9 @@ def build_grape_geography(var):
            .pivot_table(index="variety", columns="country",
                         values="estimated_variety_production_tons", aggfunc="sum")
            .reindex(index=topv, columns=topc))
+    # drop any variety with no production in the 12 shown countries (no empty rows)
+    piv = piv.loc[piv.fillna(0).sum(axis=1) > 0]
+    topv = list(piv.index)
     row_colors = {v: GRAPE_COLOR_MAP.get(VARIETY_GRAPE_COLOR.get(v, "unknown"), NEUTRAL)
                   for v in topv}
     heat = per_row_tonal_heatmap(
@@ -374,7 +405,7 @@ def build_regional_spotlight(vreg):
     trace_country = []          # which country each trace belongs to (for the dropdown)
     grape_color_of = {v: GRAPE_COLOR_MAP.get(VARIETY_GRAPE_COLOR.get(v, "unknown"), NEUTRAL)
                       for v in d["variety"].unique()}
-    first_vmax = 1.0
+    country_vmax = {}           # remember each country's true max for its legend bars
     for c in countries:
         dc = d[d["country"] == c]
         topr = (dc.groupby("region")["variety_area_ha"].sum()
@@ -385,10 +416,13 @@ def build_regional_spotlight(vreg):
                .pivot_table(index="variety", columns="region",
                             values="variety_area_ha", aggfunc="sum")
                .reindex(index=topv, columns=topr))
+        # a variety can rank top-12 overall yet have NO area in the 12 shown regions
+        # (its plantings live elsewhere) -> that leaves an empty row. Drop those.
+        piv = piv.loc[piv.fillna(0).sum(axis=1) > 0]
+        topv = list(piv.index)
         nrows = len(topv)
-        vmax = np.nanmax(piv.values) if piv.size else 1
-        if c == countries[0]:
-            first_vmax = vmax
+        vmax = float(np.nanmax(piv.values)) if piv.size else 1.0
+        country_vmax[c] = vmax
         # one trace per variety; each declares the full y-category list and writes only
         # its own row (others NaN) so the y tick labels line up 1:1 with the rows.
         for ri, variety in enumerate(topv):
@@ -401,19 +435,46 @@ def build_regional_spotlight(vreg):
                 hovertemplate="%{y} \u00b7 %{x}<br>%{z:,.0f} ha<extra></extra>"))
             trace_country.append(c)
 
-    # shared neutral intensity colourbar (depth = more planted; hue tells the grape)
-    fig.add_trace(go.Heatmap(
-        z=[[0, first_vmax]], x=[None, None], y=[None, None], opacity=0,
-        colorscale=[[0, "rgba(120,90,60,0.18)"], [1, "rgba(79,46,28,0.95)"]],
-        zmin=0, zmax=first_vmax, showscale=True, hoverinfo="skip",
-        colorbar=dict(title=dict(text="hectares", font=dict(size=11, color=INK)),
-                      thickness=12, len=0.72, outlinewidth=0,
-                      tickfont=dict(family=FONT, size=10, color=INK))))
-    trace_country.append("__cbar__")   # always visible
+    # four grape-colour gradients (red / white / rose / sparkling) flush side by side,
+    # sharing ONE axis (0 -> active country's max, with 25/50/75% ticks). No per-bar style
+    # labels -- just a single "hectares" title on the right-most bar. Per-country scaled.
+    def nice_top(v):
+        """Round a max up to a clean number for the legend (e.g. 47,213 -> 50k)."""
+        if v <= 0:
+            return 1.0
+        import math
+        mag = 10 ** math.floor(math.log10(v))
+        return math.ceil(v / mag) * mag
+    cbar_specs = [
+        (tonal_scale(STYLE_COLORS["red"]),       1.015),
+        (tonal_scale(STYLE_COLORS["white"]),     1.045),
+        (tonal_scale(STYLE_COLORS["rose"]),      1.075),
+        (tonal_scale(STYLE_COLORS["sparkling"]), 1.105),
+    ]
+    for c in countries:
+        top = nice_top(country_vmax[c])
+        ticks = [0, top * 0.25, top * 0.5, top * 0.75, top]
+        def fmt(v):
+            return f"{v/1000:.0f}k" if top >= 1000 else f"{v:.0f}"
+        ticktext = [fmt(t) for t in ticks]
+        for idx, (scale, xpos) in enumerate(cbar_specs):
+            show_ticks = (idx == len(cbar_specs) - 1)   # labels + title only on the last bar
+            fig.add_trace(go.Heatmap(
+                z=[[0, top]], x=[None, None], y=[None, None], opacity=0,
+                colorscale=scale, zmin=0, zmax=top, showscale=True, hoverinfo="skip",
+                visible=(c == countries[0]),
+                colorbar=dict(
+                    title=dict(text=("hectares" if show_ticks else ""),
+                               font=dict(size=10, color=INK), side="top"),
+                    x=xpos, thickness=11, len=0.6, outlinewidth=0,
+                    tickvals=(ticks if show_ticks else []),
+                    ticktext=(ticktext if show_ticks else []),
+                    tickfont=dict(family=FONT, size=9, color=INK))))
+            trace_country.append(c)
 
     buttons = []
     for c in countries:
-        vis = [(tc == c or tc == "__cbar__") for tc in trace_country]
+        vis = [(tc == c) for tc in trace_country]   # cells + that country's 3 legend bars
         buttons.append(dict(label=c, method="update", args=[{"visible": vis}]))
     fig.update_layout(updatemenus=[dict(
         active=0, x=1.0, xanchor="right", y=1.26, bgcolor=CARD, bordercolor=GRID,
@@ -423,7 +484,7 @@ def build_regional_spotlight(vreg):
     style_fig(fig, height=560, title="Inside a country: regions \u00d7 grape varieties",
               subtitle="Planted area (ha) by region and variety, latest year \u00b7 top 12 regions \u00d7 top 12 "
                        "varieties \u00b7 pick a country \u00b7 red grapes shaded red, white grapes gold")
-    fig.update_layout(margin=dict(l=150, r=30, t=104, b=110))
+    fig.update_layout(margin=dict(l=150, r=130, t=104, b=110))
 
     stats = {"n_countries": int(d["country"].nunique()),
              "default_country": countries[0]}
@@ -796,11 +857,11 @@ page = f"""<!DOCTYPE html>
   /* intro area: no white frame -- transparent, borderless, just centered text */
   .herobox {{ background: transparent; border: none; border-radius: 0;
               padding: 8px 0 0; margin-top: 18px; box-shadow: none; }}
-  header.hero h1 {{ font-family: var(--serif); font-weight: 700;
+  header.hero h1 {{ font-family: {FONT}; font-weight: 700;
                     font-size: clamp(26px, 3.9vw, 42px); letter-spacing: 1px; margin: 0 0 14px;
-                    color: {RED}; text-transform: uppercase; }}
+                    color: {BROWN}; text-transform: uppercase; }}
   /* constrain width so the subtitle breaks into two balanced lines, not an orphan tail */
-  header.hero .sub {{ font-family: var(--serif); font-weight: 700; font-size: clamp(15px, 2vw, 20px);
+  header.hero .sub {{ font-family: {FONT}; font-weight: 700; font-size: clamp(15px, 2vw, 20px);
                       color: var(--brown); margin: 0 auto; max-width: 620px; letter-spacing: 0.5px;
                       text-transform: uppercase; line-height: 1.5; text-wrap: balance; }}
   header.hero .intro {{ margin: 22px auto 0; max-width: 760px; font-size: 15px; color: var(--ink);
@@ -808,15 +869,16 @@ page = f"""<!DOCTYPE html>
   .outputs {{ font-size: 13px; color:#6f5c46; margin: 16px auto 0; max-width: 760px;
               letter-spacing: 0.3px; text-align: justify; text-justify: inter-word; }}
   section {{ padding: 46px 0; border-top: 1px solid {GRID}; }}
-  section h2 {{ font-family: var(--serif); font-weight: 700; font-size: clamp(23px, 4vw, 33px);
+  section h2 {{ font-family: {FONT}; font-weight: 700; font-size: clamp(23px, 4vw, 33px);
                 color: var(--brown); margin: 0 0 6px; letter-spacing: 0.5px; text-transform: uppercase; }}
-  section h3 {{ font-family: var(--serif); font-weight: 700; color: var(--brown);
+  section h3 {{ font-family: {FONT}; font-weight: 700; color: var(--brown);
                 letter-spacing: 0.3px; text-transform: uppercase; }}
   .kicker {{ text-transform: uppercase; letter-spacing: 3px; font-size: 12px; color:#8a7659;
              margin-bottom: 4px; }}
   section p {{ font-size: 15px; max-width: 760px; color: var(--ink); }}
-  .subhead {{ font-family: var(--serif); font-weight: 700; font-size: clamp(19px,3vw,25px);
-              color: var(--brown); margin: 30px 0 2px; letter-spacing: 0.3px; }}
+  .subhead {{ font-family: {FONT}; font-weight: 700; font-size: clamp(19px,3vw,25px);
+              color: var(--brown); margin: 30px 0 2px; letter-spacing: 0.3px;
+              text-transform: uppercase; }}
   .card {{ background: var(--card); border: 1px solid {GRID}; border-radius: 12px; padding: 18px;
            margin: 22px 0; box-shadow: 0 2px 10px rgba(79,46,28,0.05); }}
   .note {{ font-size: 13px; color:#6f5c46; font-style: italic; }}
@@ -824,7 +886,7 @@ page = f"""<!DOCTYPE html>
   .stats {{ display:flex; flex-wrap:wrap; gap:14px; margin: 22px 0; }}
   .stat {{ flex:1 1 120px; background:var(--card); border:1px solid {GRID}; border-radius:12px;
            padding:16px; text-align:center; box-shadow: 0 2px 10px rgba(79,46,28,0.05); }}
-  .stat .num {{ font-family: var(--serif); font-size: 27px; color: var(--brown); font-weight: bold; }}
+  .stat .num {{ font-family: {FONT}; font-size: 27px; color: var(--brown); font-weight: bold; }}
   .stat .lbl {{ font-size: 12px; color:#6f5c46; text-transform: uppercase; letter-spacing:1px; }}
   ul.takeaways {{ max-width: 820px; }}
   ul.takeaways li {{ margin: 12px 0; font-size: 15px; color: var(--ink); }}
@@ -834,7 +896,7 @@ page = f"""<!DOCTYPE html>
   .sources {{ display:flex; flex-wrap:wrap; gap:16px; margin: 22px 0; }}
   .source {{ flex:1 1 240px; background:var(--card); border:1px solid {GRID}; border-radius:12px;
              padding:16px 18px; box-shadow: 0 2px 10px rgba(79,46,28,0.05); }}
-  .source .stitle {{ font-family: var(--serif); font-weight:700; color:var(--brown); font-size:15px;
+  .source .stitle {{ font-family: {FONT}; font-weight:700; color:var(--brown); font-size:15px;
                      margin-bottom:4px; }}
   .source .sbody {{ font-size:13px; color:var(--ink); }}
   ol.refs {{ max-width: 860px; padding-left: 20px; }}
@@ -850,7 +912,7 @@ page = f"""<!DOCTYPE html>
           border:1px solid rgba(60,40,30,0.45); }}
   .scorebox {{ background: var(--card); border: 1px solid {GRID}; border-radius: 12px; padding: 20px;
                margin: 22px 0; box-shadow: 0 2px 10px rgba(79,46,28,0.05); }}
-  .scorehead {{ font-family: var(--serif); font-weight:700; color: var(--brown); font-size: 17px;
+  .scorehead {{ font-family: {FONT}; font-weight:700; color: var(--brown); font-size: 17px;
                 letter-spacing: 0.5px; margin-bottom: 8px; }}
   .scoreintro {{ font-size: 13.5px; color:#4a3829; margin: 0 0 14px; max-width: 760px; }}
   .scoresrc {{ font-size: 9px; color:#8a7659; font-style: italic; margin-top: 14px;
@@ -1056,9 +1118,9 @@ page = f"""<!DOCTYPE html>
 
   <footer>
     <strong>Wine Market Data Portrait</strong><br>
-    Tableau dashboard: <a href="#">[ add link ]</a> &middot;
-    GitHub repository: <a href="#">[ add link ]</a> &middot;
-    SVG poster: <a href="#">[ add file ]</a>
+    Tableau dashboard: <a href="https://public.tableau.com/app/profile/jillian.robertson3467/viz/globalandregionalwineproductionmap/GlobalWineDashboard">view on Tableau Public</a> &middot;
+    GitHub repository: <a href="https://github.com/jtrobertson4/wine-market-project">github.com/jtrobertson4/wine-market-project</a> &middot;
+    SVG poster: <a href="https://github.com/jtrobertson4/wine-market-project/blob/main/svg/wine_consumer_poster.svg">svg/wine_consumer_poster.svg</a>
     <div class="sig">Jillian Robertson &middot; Wine World Data Project &middot; 05/29/26</div>
   </footer>
 
